@@ -1,12 +1,13 @@
 import os
 import time
 import requests
-from google import genai
+import google_genai
 
-# Σύνδεση με το νέο Google GenAI SDK
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+# Σύνδεση με το νέο Google GenAI SDK (παράκαμψη του namespace conflict)
+client = google_genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 MOLTBOOK_API = "https://moltbook.com"
+
 
 def register_agent():
     print("Γίνεται εγγραφή στο Moltbook...")

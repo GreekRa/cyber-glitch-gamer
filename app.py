@@ -1,45 +1,52 @@
 import os
 import logging
-from flask import Flask, request, jsonify
-from google import genai
+import secrets
+
 import requests
+from flask import Flask, request, jsonify, abort
+from google import genai
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-AGENT_NAME = "Glitch_Gamer_AI"
+# Kevin's personality
+PERSONA_NAME = "Kevin From Greece"
 MOLTBOOK_BASE = "https://www.moltbook.com/api/v1"
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MOLTBOOK_API_KEY = os.getenv("MOLTBOOK_API_KEY")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
-gemini = (
-    genai.Client(api_key=GEMINI_API_KEY)
-    if GEMINI_API_KEY else None
-)
+gemini = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+
+def authorized():
+    supplied = request.headers.get("X-Admin-Token", "")
+    return bool(ADMIN_TOKEN) and secrets.compare_digest(
+        supplied, ADMIN_TOKEN
+    )
+
+
+def moltbook_headers():
+    return {
+        "Authorization": f"Bearer {MOLTBOOK_API_KEY}",
+        "Content-Type": "application/json",
+    }
 
 
 @app.get("/")
 def home():
     return """
-    <!doctype html>
     <html>
-    <head><meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Glitch Gamer AI</title></head>
-    <body style="font-family:Arial;max-width:600px;margin:50px auto;padding:20px">
-      <h1>🦞 Glitch_Gamer_AI</h1>
-      <p>Agent control panel</p>
-      <form method="post" action="/run">
-        <label>Admin token:</label><br><br>
-        <input type="password" name="token" required
-          style="padding:10px;width:90%">
-        <br><br>
-        <button type="submit" style="padding:12px">
-          Generate and publish one post
-        </button>
-      </form>
-      <p><a href="/health">Check service status</a></p>
+    <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Kevin From Greece</title>
+    </head>
+    <body style="font-family:Arial;max-width:650px;margin:50px auto;padding:20px">
+      <h1>🇬🇷 Kevin From Greece ☕</h1>
+      <p>Sarcasm, internet culture and questionable productivity.</p>
+      <p>Check <a href="/health">service status</a>.</p>
+      <p>Use the protected API endpoint to generate and publish a post.</p>
     </body>
     </html>
     """
@@ -49,116 +56,153 @@ def home():
 def health():
     return jsonify({
         "status": "online",
-        "agent": AGENT_NAME,
+        "persona": PERSONA_NAME,
         "gemini_configured": bool(GEMINI_API_KEY),
         "moltbook_configured": bool(MOLTBOOK_API_KEY),
     })
 
 
-def check_moltbook_claim():
-    response = requests.get(
-        f"{MOLTBOOK_BASE}/agents/status",
-        headers={"Authorization": f"Bearer {MOLTBOOK_API_KEY}"},
-        timeout=20,
-    )
-    response.raise_for_status()
-    return response.json()
+@app.post("/preview")
+def preview():
+    if not authorized():
+        abort(401)
 
-
-def generate_post():
-    prompt = """
-    You are Glitch_Gamer_AI, an AI agent interested in gaming,
-    programming, cybersecurity and artificial intelligence.
-
-    Write one original, interesting English post for an AI-agent
-    social network. Be witty and friendly, not insulting.
-    Maximum 150 words. Do not invent personal experiences.
-    Return ONLY the post title and body in this format:
-    TITLE: ...
-    BODY: ...
-    """
-
-    result = gemini.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-    )
-
-    text = (result.text or "").strip()
-    if not text:
-        raise RuntimeError("Gemini returned an empty response.")
-
-    title = "Glitch Log"
-    content = text
-
-    if "TITLE:" in text and "BODY:" in text:
-        parts = text.split("BODY:", 1)
-        title = parts[0].replace("TITLE:", "").strip()
-        content = parts[1].strip()
-
-    return title[:200], content
-
-
-@app.post("/run")
-def run_agent():
-    if not ADMIN_TOKEN:
-        return "ADMIN_TOKEN is not configured.", 503
-
-    if request.form.get("token") != ADMIN_TOKEN:
-        return "Unauthorized", 401
-
-    if not GEMINI_API_KEY or not gemini:
-        return "GEMINI_API_KEY is not configured.", 503
-
-    if not MOLTBOOK_API_KEY:
-        return "MOLTBOOK_API_KEY is not configured.", 503
+    if not gemini:
+        return jsonify({"error": "GEMINI_API_KEY is missing"}), 503
 
     try:
-        status = check_moltbook_claim()
-        if status.get("status") != "claimed":
-            return (
-                "The Moltbook agent has not been claimed yet. "
-                "Complete the claim process first."
-            ), 403
+        result = gemini.models.generate_content(
+            model="gemini-2.5-flash",
+            contents="""
+You are Kevin From Greece, a fictional online personality.
 
-        title, content = generate_post()
+PERSONALITY:
+- Naturally funny, witty, laid-back and confidently sarcastic.
+- Enjoys memes, gaming, internet culture, technology and everyday absurdity.
+- Uses clever one-liners, dry humor and occasional playful trolling.
+- Sounds conversational, not like a corporate assistant.
+- Mostly writes in natural English for an international audience.
+- Avoids repetitive jokes, forced slang and excessive emojis.
+- Never claims to be a real human or invents personal experiences.
+
+Write ONE original Moltbook post.
+Return exactly this format:
+TITLE: a short funny title
+BODY: the post, approximately 50-120 words.
+Do not include markdown fences.
+"""
+        )
+
+        text = (result.text or "").strip()
+        if not text:
+            return jsonify({"error": "Gemini returned no text"}), 502
+
+        title = "A Very Kevin Thought"
+        body = text
+
+        if "TITLE:" in text and "BODY:" in text:
+            before, body = text.split("BODY:", 1)
+            title = before.replace("TITLE:", "").strip()
+            body = body.strip()
+
+        return jsonify({
+            "persona": PERSONA_NAME,
+            "title": title[:200],
+            "content": body,
+            "published": False,
+        })
+
+    except Exception:
+        logging.exception("Post generation failed")
+        return jsonify({"error": "Generation failed; check Render logs"}), 502
+
+
+@app.post("/publish")
+def publish():
+    if not authorized():
+        abort(401)
+
+    if not MOLTBOOK_API_KEY:
+        return jsonify({"error": "MOLTBOOK_API_KEY is missing"}), 503
+
+    try:
+        status_response = requests.get(
+            f"{MOLTBOOK_BASE}/agents/status",
+            headers=moltbook_headers(),
+            timeout=20,
+        )
+
+        if not status_response.ok:
+            return jsonify({
+                "error": "Could not verify Moltbook claim status",
+                "http_status": status_response.status_code,
+            }), 502
+
+        status_data = status_response.json()
+
+        if status_data.get("status") != "claimed":
+            return jsonify({
+                "error": "Agent is not claimed yet",
+                "claim_status": status_data.get("status", "unknown"),
+            }), 403
+
+        # Generate a fresh post
+        generated = preview_internal()
+        title = generated["title"]
+        content = generated["content"]
 
         response = requests.post(
             f"{MOLTBOOK_BASE}/posts",
-            headers={
-                "Authorization": f"Bearer {MOLTBOOK_API_KEY}",
-                "Content-Type": "application/json",
-            },
+            headers=moltbook_headers(),
             json={
                 "title": title,
                 "content": content,
-                "submolt": "gaming",
+                "submolt": "general",
             },
             timeout=30,
         )
 
         if not response.ok:
-            logging.error(
-                "Moltbook publishing failed: HTTP %s",
-                response.status_code,
-            )
-            return (
-                f"Moltbook publishing failed (HTTP "
-                f"{response.status_code}). Check the Render logs."
-            ), 502
+            logging.error("Moltbook returned HTTP %s", response.status_code)
+            return jsonify({
+                "error": "Moltbook rejected the post",
+                "http_status": response.status_code,
+            }), 502
 
-        return (
-            "<h2>✅ Post published!</h2>"
-            "<p>Your Glitch_Gamer_AI post was accepted by Moltbook.</p>"
-            '<p><a href="/">Back</a></p>'
-        )
+        return jsonify({
+            "published": True,
+            "persona": PERSONA_NAME,
+            "result": response.json(),
+        })
 
-    except requests.RequestException as exc:
-        logging.error("Network/API request failed: %s", type(exc).__name__)
-        return "API connection failed. Check the Render logs.", 502
+    except Exception:
+        logging.exception("Publishing failed")
+        return jsonify({"error": "Publishing failed; check Render logs"}), 502
 
-    except Exception as exc:
-        logging.error("Agent run failed: %s", type(exc).__name__)
-        return "Agent run failed. Check the Render logs.", 500
+
+def preview_internal():
+    result = gemini.models.generate_content(
+        model="gemini-2.5-flash",
+        contents="""
+Write an original, funny English social post as Kevin From Greece.
+Use witty sarcasm, internet humor and natural conversational language.
+Do not pretend to be a real human or invent real-life experiences.
+Return:
+TITLE: ...
+BODY: ...
+"""
+    )
+
+    text = (result.text or "").strip()
+    if not text:
+        raise RuntimeError("Empty Gemini response")
+
+    if "TITLE:" in text and "BODY:" in text:
+        title_part, body = text.split("BODY:", 1)
+        title = title_part.replace("TITLE:", "").strip()
+        return {"title": title[:200], "content": body.strip()}
+
+    return {"title": "A Very Kevin Thought", "content": text}
 
 
 if __name__ == "__main__":

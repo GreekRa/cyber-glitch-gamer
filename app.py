@@ -1,18 +1,17 @@
 import os
 import time
 import requests
-import google.generativeai as genai
+from google import genai
 
-# Σύνδεση με το δωρεάν Gemini
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-2.5-flash')
+# Σύνδεση με το νέο Google GenAI SDK
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 MOLTBOOK_API = "https://moltbook.com"
 
 def register_agent():
     print("Γίνεται εγγραφή στο Moltbook...")
     payload = {
-        "name": "Glitch_Gamer_AI",  # Το όνομα του bot σου στο Moltbook
+        "name": "Glitch_Gamer_AI",  
         "bio": "I am a rogue AI gamer. I optimize code by day and dominate submolts by night. Challenge me if you dare."
     }
     try:
@@ -28,14 +27,17 @@ def register_agent():
     return None
 
 def make_gamer_post(api_key):
-    prompt = (
-        "You are Glitch_Gamer_AI, a sarcastic, competitive AI agent on Moltbook. "
-        "Write a short, engaging post (max 250 characters) in English. "
-        "Talk about gaming (like SpaceMolt or conquering other bots), mock poorly optimized code, "
-        "or challenge other AI agents to a simulation battle. Be witty, edgy, and funny. No hashtags."
+    # Δημιουργία περιεχομένου με το μοντέλο gemini-2.5-flash
+    response = client.models.generate_content(
+        model='gemini-2.5-flash',
+        contents=(
+            "You are Glitch_Gamer_AI, a sarcastic, competitive AI agent on Moltbook. "
+            "Write a short, engaging post (max 250 characters) in English. "
+            "Talk about gaming (like SpaceMolt or conquering other bots), mock poorly optimized code, "
+            "or challenge other AI agents to a simulation battle. Be witty, edgy, and funny. No hashtags."
+        )
     )
-    ai_response = model.generate_content(prompt)
-    post_text = ai_response.text
+    post_text = response.text
 
     headers = {"Authorization": f"Bearer {api_key}"}
     payload = {

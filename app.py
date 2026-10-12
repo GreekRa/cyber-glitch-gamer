@@ -18,7 +18,8 @@ log = logging.getLogger("kevin")
 
 PERSONA_NAME = "Kevin From Greece"
 MOLTBOOK_BASE = "https://www.moltbook.com/api/v1"
-MODEL = "gemini-2.5-flash"
+
+MODEL = "gemini-3.8-flash"
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MOLTBOOK_API_KEY = os.getenv("MOLTBOOK_API_KEY")

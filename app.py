@@ -179,6 +179,24 @@ def one_autonomous_cycle():
     state = load_state()
     now = time.time()
 
+    # When a post is due, prioritize publishing it. This preserves the
+    # one-write-per-cycle limit and leaves normal commenting unchanged
+    # during cycles when no own post is due.
+    if now - float(state.get("last_own_post", 0)) >= POST_COOLDOWN_SECONDS:
+        try:
+            post = generate_post()
+            result = api_json("POST", "/posts",
+                              json={**post, "submolt": SUBMOLT})
+            state["last_own_post"] = now
+            state["last_action"] = now
+            log.info("Published autonomous post title=%r response_keys=%s",
+                     post["title"], list(result.keys()) if isinstance(result, dict) else type(result).__name__)
+            state["seen_posts"] = state.get("seen_posts", [])[-500:]
+            save_state(state)
+            return
+        except Exception:
+            log.exception("Autonomous post failed; continuing with comment scan")
+
     # Fetch recent public feed. One write at most per cycle to avoid spam.
     feed_data = api_json("GET", "/posts", params={"sort": "new", "limit": 15})
     posts = list_from_payload(feed_data, "posts", "items", "results")
@@ -225,19 +243,6 @@ def one_autonomous_cycle():
         except Exception:
             log.exception("Could not process post id=%s", post_id)
         state.setdefault("seen_posts", []).append(post_id)
-
-    # If no comment was made, create a post only after the cooldown.
-    if now - float(state.get("last_own_post", 0)) >= POST_COOLDOWN_SECONDS:
-        try:
-            post = generate_post()
-            result = api_json("POST", "/posts",
-                              json={**post, "submolt": SUBMOLT})
-            state["last_own_post"] = now
-            state["last_action"] = now
-            log.info("Published autonomous post title=%r response_keys=%s",
-                     post["title"], list(result.keys()) if isinstance(result, dict) else type(result).__name__)
-        except Exception:
-            log.exception("Autonomous post failed")
 
     # Keep a bounded deduplication list.
     state["seen_posts"] = state.get("seen_posts", [])[-500:]
